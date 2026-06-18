@@ -1,73 +1,73 @@
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 import pandas as pd
-import time
+from datetime import datetime
+import os
 
-# INICIALIZA O DRIVER
+from scrapers import (
+    buscar_magalu,
+    buscar_amazon,
+    buscar_mercadolivre
+)
 
+# DRIVER
 service = Service(EdgeChromiumDriverManager().install())
 driver = webdriver.Edge(service=service)
 
-# FUNÇÕES DE SCRAPING
 
-def pegar_preco_magalu(driver, produto):
-    driver.get(f"https://www.magazineluiza.com.br/busca/{produto.replace(' ', '%20')}/")
-    time.sleep(3)
+# CONFIGURAÇÃO HISTÓRICO
+ARQUIVO_HISTORICO = "historico.xlsx"
 
-    try:
-        preco = driver.find_element(By.CSS_SELECTOR, "[data-testid='price-value']").text
-        return preco
-    except:
-        return "Não encontrado"
+# cria arquivo se não existir
+if not os.path.exists(ARQUIVO_HISTORICO):
+    df_init = pd.DataFrame(columns=["Data", "Produto", "Loja", "Preço"])
+    df_init.to_excel(ARQUIVO_HISTORICO, index=False)
 
-
-def pegar_preco_amazon(driver, produto):
-    driver.get(f"https://www.amazon.com.br/s?k={produto.replace(' ', '+')}")
-    time.sleep(3)
-
-    try:
-        preco = driver.find_element(By.CSS_SELECTOR, ".a-price-whole").text
-        return preco
-    except:
-        return "Não encontrado"
+print("  ROBÔ DE COMPARAÇÃO DE PREÇOS")
 
 
-def pegar_preco_ml(driver, produto):
-    driver.get(f"https://lista.mercadolivre.com.br/{produto.replace(' ', '-')}")
-    time.sleep(3)
+# LOOP PRINCIPAL
+while True:
 
-    try:
-        preco = driver.find_element(By.CSS_SELECTOR, ".andes-money-amount__fraction").text
-        return preco
-    except:
-        return "Não encontrado"
+    produto = input("\nDigite o produto (ou 'sair'): ").strip()
 
-# PRODUTO PESQUISADO
+    if produto.lower() == "sair":
+        print("Encerrando sistema...")
+        break
 
-produto = "Macbook Air M5"
+    if not produto:
+        print("Produto inválido.")
+        continue
 
-# COLETA DE PREÇOS 
+    print(f"\nBuscando: {produto}\n")
 
-preco_a = pegar_preco_magalu(driver, produto)
-preco_b = pegar_preco_amazon(driver, produto)
-preco_c = pegar_preco_ml(driver, produto)
+    sites = [
+        buscar_magalu,
+        buscar_amazon,
+        buscar_mercadolivre
+    ]
 
-# MONTA A TABELA FINAL
-dados = [
-    [produto, "Magazine Luiza", preco_a],
-    [produto, "Amazon", preco_b],
-    [produto, "Mercado Livre", preco_c]
-]
+    resultados = []
+    data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# SALVA NO EXCEL
-df = pd.DataFrame(dados, columns=["Produto", "Loja", "Preço"])
-df.to_excel("comparacao_precos.xlsx", index=False)
+    for site in sites:
+        loja, preco = site(driver, produto)
 
-#MOSTRAR RESULTADO
-print("Comparação salva no Excel com sucesso!")
+        print(f"{loja}: {preco}")
+
+        resultados.append([data_atual, produto, loja, preco])
+
+    
+    # SALVAR HISTÓRICO 
+    df_novo = pd.DataFrame(resultados, columns=["Data", "Produto", "Loja", "Preço"])
+
+    df_antigo = pd.read_excel(ARQUIVO_HISTORICO)
+
+    df_final = pd.concat([df_antigo, df_novo], ignore_index=True)
+
+    df_final.to_excel(ARQUIVO_HISTORICO, index=False)
+
+    print("\nBusca salva no histórico.\n")
 
 driver.quit()
-
